@@ -30,11 +30,11 @@ func init() {
 
 	if err != nil {
 		if err.Error() == "no change" {
-			log.Println("no db changes to be made")
+			log.Println("migration: no db changes to be made")
 			return
 		}
 		log.Fatalln(err)
 	}
 
-	log.Println("done")
+	log.Println("migration: done")
 }

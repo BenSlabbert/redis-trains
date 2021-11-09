@@ -6,6 +6,7 @@ import (
 	"github.com/jackc/pgx/v4"
 	"google.golang.org/protobuf/types/known/structpb"
 	"log"
+	"strings"
 )
 
 type Archiver struct {
@@ -53,7 +54,9 @@ func (a *Archiver) SaveBatch(messages []redis.XMessage) (err error) {
 			return err
 		}
 
-		batch.Queue("insert into train_archive(sequence_id, data) values($1, $2)", msg.ID, json)
+		split := strings.Split(msg.ID, "-")
+
+		batch.Queue("insert into train_archive(sequence_timestamp, sequence_increment, data) values($1, $2, $3)", split[0], split[1], json)
 	}
 
 	br := tx.SendBatch(context.Background(), batch)
