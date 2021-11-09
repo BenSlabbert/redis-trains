@@ -3,6 +3,7 @@ package psqlstorage
 import (
 	"context"
 	"fmt"
+	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
 	"io/ioutil"
 )
@@ -22,13 +23,15 @@ func NewDB() (*DB, error) {
 	}, nil
 }
 
-func (db *DB) ExecuteFile(path string) error {
-	tx, err := db.dbpool.Begin(context.Background())
+func (db *DB) ExecuteFile(path string) (err error) {
+	var tx pgx.Tx
+	tx, err = db.dbpool.Begin(context.Background())
 	if err != nil {
 		return err
 	}
 
-	file, err := ioutil.ReadFile(path)
+	var file []byte
+	file, err = ioutil.ReadFile(path)
 	if err != nil {
 		return err
 	}

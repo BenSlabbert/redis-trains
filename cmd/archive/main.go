@@ -13,7 +13,7 @@ import (
 
 const Start = "0-0"
 const Stream = "train-events"
-const Group = "archiver"
+const Group = "archiver-2"
 const Consumer = "archiver-1"
 const LastConsumed = ">"
 const BatchSize = 100
@@ -23,31 +23,25 @@ func main() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-
-	err = archiver.SaveBatch([]redis.XMessage{
-		{
-			ID: "someId",
-			Values: map[string]interface{}{
-				"key": "value",
-			},
-		},
-	})
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	err = archiver.Close()
-	if err != nil {
-		log.Fatalln(err)
-	}
+	defer func() {
+		if e := archiver.Close(); e != nil {
+			log.Println(e)
+		}
+	}()
 
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
+	defer func() {
+		if e := rdb.Close(); e != nil {
+			log.Println(e)
+		}
+	}()
 
-	consumer, err := stream.NewConsumer(context.Background(), rdb, Stream, Group, Start, LastConsumed, Consumer)
+	var consumer *stream.Consumer
+	consumer, err = stream.NewConsumer(context.Background(), rdb, Stream, Group, Start, LastConsumed, Consumer)
 	if err != nil {
 		log.Fatalln(err)
 	}
@@ -56,13 +50,8 @@ func main() {
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
 
 	for {
-
 		select {
 		case <-sigs:
-			err = rdb.Close()
-			if err != nil {
-				log.Fatalln(err)
-			}
 			os.Exit(0)
 		default:
 			// continue below
@@ -74,10 +63,23 @@ func main() {
 			log.Fatalln(err)
 		}
 
-		log.Println(messages)
+		if len(messages) == 0 {
+			continue
+		}
 
-		// save as a batch
-		//for _, msg := range messages {
-		//}
+		msgIds := make([]string, len(messages), len(messages))
+		for i := range msgIds {
+			msgIds[i] = messages[i].ID
+		}
+
+		err = archiver.SaveBatch(messages)
+		if err != nil {
+			log.Fatalln(err)
+		}
+
+		err = rdb.XAck(context.Background(), Stream, Group, msgIds...).Err()
+		if err != nil {
+			log.Fatalln(err)
+		}
 	}
 }

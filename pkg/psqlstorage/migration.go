@@ -24,8 +24,15 @@ func init() {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	err = m.Steps(1)
+
+	// number of files we need to run
+	err = m.Up()
+
 	if err != nil {
+		if err.Error() == "no change" {
+			log.Println("no db changes to be made")
+			return
+		}
 		log.Fatalln(err)
 	}
 

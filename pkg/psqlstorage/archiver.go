@@ -28,8 +28,9 @@ func (a *Archiver) Close() error {
 	return nil
 }
 
-func (a *Archiver) SaveBatch(messages []redis.XMessage) error {
-	tx, err := a.db.dbpool.Begin(context.Background())
+func (a *Archiver) SaveBatch(messages []redis.XMessage) (err error) {
+	var tx pgx.Tx
+	tx, err = a.db.dbpool.Begin(context.Background())
 	if err != nil {
 		return err
 	}
@@ -38,13 +39,15 @@ func (a *Archiver) SaveBatch(messages []redis.XMessage) error {
 	batch := &pgx.Batch{}
 
 	for _, msg := range messages {
-		newStruct, err := structpb.NewStruct(msg.Values)
+		var newStruct *structpb.Struct
+		newStruct, err = structpb.NewStruct(msg.Values)
 		if err != nil {
 			// release the tx
 			return err
 		}
 
-		json, err := newStruct.MarshalJSON()
+		var json []byte
+		json, err = newStruct.MarshalJSON()
 		if err != nil {
 			// release the tx
 			return err
@@ -57,11 +60,10 @@ func (a *Archiver) SaveBatch(messages []redis.XMessage) error {
 
 	for range messages {
 		// call this for each item in the batch queue to get the results for them
-		ct, err := br.Exec()
+		_, err = br.Exec()
 		if err != nil {
 			return err
 		}
-		log.Println(ct.RowsAffected())
 	}
 
 	err = br.Close()
@@ -70,5 +72,6 @@ func (a *Archiver) SaveBatch(messages []redis.XMessage) error {
 		return err
 	}
 
+	log.Printf("saved: %d rows in batch", len(messages))
 	return tx.Commit(context.Background())
 }
