@@ -5,65 +5,57 @@ import (
 	"github.com/go-redis/redis/v8"
 	"google.golang.org/protobuf/types/known/structpb"
 	"log"
+	"os"
+	"os/signal"
 	"redis-trains/pkg/stream"
+	"syscall"
+	"time"
 )
 
-var ctx = context.Background()
-
-const Start = "0-0"
 const Stream = "train-events"
-const Group = "group-1"
-const Consumer = "consumer-1"
-const LastConsumed = ">"
-const BatchSize = 10
 
 func main() {
-	ExampleClient()
-}
-
-func ExampleClient() {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     "localhost:6379",
 		Password: "", // no password set
 		DB:       0,  // use default DB
 	})
+	defer func() {
+		if err := rdb.Close(); err != nil {
+			log.Fatalln(err)
+		}
+	}()
 
 	producer := stream.NewProducer(rdb, Stream, 1000, true)
+
+	sigs := make(chan os.Signal, 1)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		select {
+		case <-sigs:
+			os.Exit(0)
+		case <-time.After(1 * time.Second):
+			err := publishNewMessage(producer)
+			if err != nil {
+				log.Fatalln(err)
+			}
+		}
+	}
+}
+
+func publishNewMessage(producer *stream.Producer) error {
 	s, err := structpb.NewStruct(map[string]interface{}{})
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
+	s.Fields["key"] = structpb.NewStringValue("value: " + time.Now().String())
 
-	s.Fields["test"] = structpb.NewStringValue("value")
-	newId, err := producer.Produce(ctx, s)
+	var newId string
+	newId, err = producer.Produce(context.Background(), s)
 	if err != nil {
-		log.Fatalln(err)
+		return err
 	}
 	log.Println(newId)
-
-	consumer, err := stream.NewConsumer(ctx, rdb, Stream, Group, Start, LastConsumed, Consumer)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	messages, err := consumer.Consume(BatchSize)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	if len(messages) == 0 {
-		messages, err = consumer.Consume(BatchSize)
-		if err != nil {
-			log.Fatalln(err)
-		}
-	}
-
-	for _, msg := range messages {
-		log.Println(msg.ID)
-		cnt, err := rdb.XAck(ctx, Stream, Group, msg.ID).Result()
-		if err != nil && err != redis.Nil {
-			log.Fatalln(err)
-		}
-		log.Println(cnt)
-	}
+	return nil
 }
