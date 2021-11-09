@@ -13,7 +13,7 @@ import (
 
 const Start = "0-0"
 const Stream = "train-events"
-const Group = "archiver-2"
+const Group = "archiver"
 const Consumer = "archiver-1"
 const LastConsumed = ">"
 const BatchSize = 100
