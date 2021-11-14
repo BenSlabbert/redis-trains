@@ -1,10 +1,19 @@
 version: "3"
 
 services:
-  redis:
+  redis-stream:
     image: redis:6-alpine
     ports:
       - "6379:6379"
+
+  neo4j:
+    image: neo4j:4.3-community
+    environment:
+      NEO4J_AUTH: none
+      NEO4JLABS_PLUGINS: '["graph-data-science"]'
+    ports:
+      - "7474:7474"
+      - "7687:7687"
 
   psql:
     image: postgres:14-alpine

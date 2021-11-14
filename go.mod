@@ -7,6 +7,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.15.1
 	github.com/jackc/pgx/v4 v4.13.0
 	github.com/lib/pq v1.10.2
+	github.com/neo4j/neo4j-go-driver/v4 v4.4.0
 	google.golang.org/protobuf v1.27.1
 )
 
