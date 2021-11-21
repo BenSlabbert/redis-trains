@@ -1,32 +1,52 @@
 package main
 
 import (
-	"context"
-	"github.com/go-redis/redis/v8"
-	"google.golang.org/protobuf/types/known/structpb"
 	"log"
 	"os"
 	"os/signal"
+	"redis-trains/pkg/graph"
+	"redis-trains/pkg/redisstorage"
 	"redis-trains/pkg/stream"
+	"redis-trains/pkg/train"
 	"syscall"
-	"time"
 )
 
 const Stream = "train-events"
 
 func main() {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "", // no password set
-		DB:       0,  // use default DB
-	})
+
+	kvStore, err := redisstorage.NewKVStore("localhost", "", 6379, 0)
+	if err != nil {
+		log.Fatalln(err)
+	}
 	defer func() {
-		if err := rdb.Close(); err != nil {
-			log.Fatalln(err)
+		if err := kvStore.Close(); err != nil {
+			log.Println(err)
 		}
 	}()
 
-	producer := stream.NewProducer(rdb, Stream, 1000, true)
+	rnc, err := graph.NewRailNetworkClient("bolt://localhost:7687", "neo4j", "neo4j", "", 2)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer func() {
+		if err := rnc.Close(); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	producer, err := stream.NewProducer("localhost", "", 6379, 0, Stream, 1000, true)
+	if err != nil {
+		log.Fatalln(err)
+	}
+	defer func() {
+		if err := producer.Close(); err != nil {
+			log.Println(err)
+		}
+	}()
+
+	simple := train.NewSimple("Thomas", rnc, kvStore, producer)
+	go simple.Run()
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM)
@@ -34,28 +54,20 @@ func main() {
 	for {
 		select {
 		case <-sigs:
-			os.Exit(0)
-		case <-time.After(1 * time.Second):
-			err := publishNewMessage(producer)
-			if err != nil {
-				log.Fatalln(err)
+			// os.Exit does not run defer funcs
+			log.Println("stopping train")
+			simple.Stop()
+			<-simple.Exiting
+			log.Println("train stopped")
+			return
+		case err = <-simple.Exiting:
+			if err == train.ErrTrainCompleted {
+				// normal execution
+				return
 			}
+
+			log.Printf("train ran into an issue: %v", err)
+			return
 		}
 	}
-}
-
-func publishNewMessage(producer *stream.Producer) error {
-	s, err := structpb.NewStruct(map[string]interface{}{})
-	if err != nil {
-		return err
-	}
-	s.Fields["key"] = structpb.NewStringValue("value: " + time.Now().String())
-
-	var newId string
-	newId, err = producer.Produce(context.Background(), s)
-	if err != nil {
-		return err
-	}
-	log.Println(newId)
-	return nil
 }
