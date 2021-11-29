@@ -14,7 +14,6 @@ import (
 const Stream = "train-events"
 
 func main() {
-
 	kvStore, err := redisstorage.NewKVStore("localhost", "", 6379, 0)
 	if err != nil {
 		log.Fatalln(err)
@@ -25,7 +24,7 @@ func main() {
 		}
 	}()
 
-	rnc, err := graph.NewRailNetworkClient("bolt://localhost:7687", "neo4j", "neo4j", "", 2)
+	rnc, err := graph.NewRailNetworkClient("127.0.0.1:6380")
 	if err != nil {
 		log.Fatalln(err)
 	}

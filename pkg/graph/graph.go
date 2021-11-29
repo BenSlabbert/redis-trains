@@ -2,324 +2,152 @@ package graph
 
 import (
 	"fmt"
-	"github.com/neo4j/neo4j-go-driver/v4/neo4j"
-	"github.com/neo4j/neo4j-go-driver/v4/neo4j/dbtype"
+	"github.com/gomodule/redigo/redis"
+	rg "github.com/redislabs/redisgraph-go"
 	"log"
-	"time"
 )
 
-const createNodes = `
-CREATE (a:Station {name: 'Kings Cross', latitude: 51.5308, longitude: -0.1238}),
-       (b:Station {name: 'Euston', latitude: 51.5282, longitude: -0.1337}),
-       (c:Station {name: 'Camden Town', latitude: 51.5392, longitude: -0.1426}),
-       (d:Station {name: 'Kentish Town', latitude: 51.5507, longitude: -0.1402}),
-       (a)-[:CONNECTION {distance: 1.0}]->(b),
-       (b)-[:CONNECTION {distance: 1.0}]->(c),
-       (c)-[:CONNECTION {distance: 1.0}]->(d),
+const relationConnection = "connection"
+const propertyDistance = "distance"
+const propertyName = "name"
+const labelStation = "Station"
+const graphVersion = "1.0"
+const graphName = "map"
+const shortestPathParameterizedQuery = "MATCH (a:Station {name: $fromStation}), (b:Station {name: $toStation}) RETURN shortestPath((a)-[:connection*0..]->(b))"
 
-       (b)-[:CONNECTION {distance: 1.0}]->(a),
-       (c)-[:CONNECTION {distance: 1.0}]->(b),
-       (d)-[:CONNECTION {distance: 1.0}]->(c);
-`
-
-const createGraphQuery = `
-CALL gds.graph.create(
-'myGraph',
-'Station',
-'CONNECTION',
-  {
-    nodeProperties: ['latitude', 'longitude'],
-    relationshipProperties: 'distance'
-  }
-);
-`
-
-const dropGraphQuery = `CALL gds.graph.drop('myGraph');`
-
-const aStarQuery = `
-MATCH (source:Station {name: $sourceStationName}), (target:Station {name: $targetStationName})
-CALL gds.shortestPath.astar.stream('myGraph', {
-  sourceNode: source,
-  targetNode: target,
-  latitudeProperty: 'latitude',
-  longitudeProperty: 'longitude',
-  relationshipWeightProperty: 'distance'
-})
-YIELD index, sourceNode, targetNode, totalCost, nodeIds, costs, path
-RETURN
-  index,
-  gds.util.asNode(sourceNode).name AS sourceNodeName,
-  gds.util.asNode(targetNode).name AS targetNodeName,
-  totalCost,
-  [nodeId IN nodeIds | gds.util.asNode(nodeId).name] AS nodeNames,
-  costs,
-  nodes(path) as path
-  ORDER BY index;
-`
-
-const addNodeQuery = `
-MATCH (target:Station {name: $targetStationName})
-CREATE (a:Station {name: $newStationName, latitude: $newStationLat, longitude: $newStationLong}),
-       (a)-[:CONNECTION {distance: $connectionDistance}]->(target),
-       (target)-[:CONNECTION {distance: $connectionDistance}]->(a);
-`
-
-const graphExistsQuery = `CALL gds.graph.exists($graphName) YIELD exists`
-
-const allStationsQuery = `MATCH (n:Station) return n;`
-
-const stationByNameQuery = `MATCH (n:Station) where n.name = $stationName return n;`
+var ErrNoResults = fmt.Errorf("no results found")
 
 type RailNetworkClient struct {
-	target      string
-	username    string
-	password    string
-	realm       string
-	maxPoolSize int
-	session     neo4j.Session
-	driver      neo4j.Driver
-	closingChan chan bool
+	conn  redis.Conn
+	graph *rg.Graph
 }
 
-type AStarResult struct {
-	TotalCost float64
-	Source    string
-	Target    string
-	Path      []string
-}
-
-func NewRailNetworkClient(target, username, password, realm string, maxPoolSize int) (*RailNetworkClient, error) {
-	driver, err := neo4j.NewDriver(target, neo4j.BasicAuth(username, password, realm), func(config *neo4j.Config) { config.MaxConnectionPoolSize = maxPoolSize })
+func NewRailNetworkClient(url string) (*RailNetworkClient, error) {
+	conn, err := redis.Dial("tcp", url)
 	if err != nil {
 		return nil, err
 	}
 
-	err = driver.VerifyConnectivity()
-	if err != nil {
+	graph := newGraph(graphName, conn)
+	rnc := &RailNetworkClient{conn: conn, graph: graph}
+
+	if err = rnc.init(); err != nil {
 		return nil, err
 	}
 
-	rnc := &RailNetworkClient{
-		target:      target,
-		username:    username,
-		password:    password,
-		realm:       realm,
-		maxPoolSize: maxPoolSize,
-		session:     driver.NewSession(neo4j.SessionConfig{AccessMode: neo4j.AccessModeWrite}),
-		driver:      driver,
-		closingChan: make(chan bool),
-	}
-
-	err = rnc.init()
-	if err != nil {
-		return nil, err
-	}
-
-	go rnc.heartBeat()
 	return rnc, nil
 }
 
-func (rnc *RailNetworkClient) init() error {
-	exists, err := rnc.graphExists()
+func (rnc *RailNetworkClient) FindPath(origin, destination string) ([]string, error) {
+	// min hops 0
+	// max hops infinite
+	query, err := rnc.graph.ParameterizedQuery(shortestPathParameterizedQuery, map[string]interface{}{"fromStation": origin, "toStation": destination})
 	if err != nil {
-		return err
+		log.Fatalln(err)
 	}
 
-	if !exists {
-		// todo do these in the same transaction!
-		_, err = rnc.queryWithWriteTransaction(createNodes, nil)
-		if err != nil {
-			return err
-		}
-
-		_, err = rnc.queryWithWriteTransaction(createGraphQuery, nil)
-		if err != nil {
-			return err
-		}
+	next := query.Next()
+	if !next {
+		return nil, ErrNoResults
 	}
 
-	return nil
-}
+	record := query.Record()
+	values := record.Values()
+	path := values[0].(rg.Path)
 
-func (rnc *RailNetworkClient) heartBeat() {
-	for {
-		select {
-		case <-rnc.closingChan:
-			return
-		case <-time.After(1 * time.Second):
-			err := rnc.driver.VerifyConnectivity()
-			if err != nil {
-				// not sure what we do here, learn about the driver
-				log.Println(err)
-			}
-		}
-	}
-}
-
-func (rnc *RailNetworkClient) Close() error {
-	rnc.closingChan <- true
-	return rnc.session.Close()
-}
-
-func (rnc *RailNetworkClient) FindAllStations() ([]string, error) {
-	records, err := rnc.queryWithReadTransaction(allStationsQuery, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var stations []string
-	for _, record := range records {
-		node := record.Values[0].(dbtype.Node)
-		stations = append(stations, node.Props["name"].(string))
+	stations := make([]string, len(path.Nodes), len(path.Nodes))
+	for i := 0; i < len(stations); i++ {
+		stations[i] = path.Nodes[i].Properties[propertyName].(string)
 	}
 
 	return stations, nil
 }
 
-func (rnc *RailNetworkClient) FindStation(name string) (string, error) {
-	record, err := rnc.queryWithReadTransaction(stationByNameQuery, map[string]interface{}{"stationName": name})
-	if err != nil {
-		return "", err
-	}
-
-	if len(record) == 0 || len(record[0].Values) == 0 {
-		return "", fmt.Errorf("station %s not found", name)
-	}
-
-	node := record[0].Values[0].(dbtype.Node)
-	return node.Props["name"].(string), nil
+func (rnc *RailNetworkClient) init() error {
+	return rnc.createGraph()
 }
 
-func (rnc *RailNetworkClient) AStar(fromStation, toStation string) (*AStarResult, error) {
-	records, err := rnc.queryWithReadTransaction(aStarQuery, map[string]interface{}{
-		"sourceStationName": fromStation,
-		"targetStationName": toStation,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	nodes := records[0].Values[6].([]interface{})
-	var stations []string
-	for _, n := range nodes {
-		node := n.(dbtype.Node)
-		stations = append(stations, node.Props["name"].(string))
-	}
-
-	return &AStarResult{
-		TotalCost: records[0].Values[3].(float64),
-		Source:    records[0].Values[1].(string),
-		Target:    records[0].Values[2].(string),
-		// todo all stations have the same connection distance, we need to vary this so the train can move at different speeds, etc
-		Path: stations,
-	}, nil
+func (rnc *RailNetworkClient) Close() error {
+	return rnc.conn.Close()
 }
 
-func (rnc *RailNetworkClient) graphExists() (bool, error) {
-	records, err := rnc.queryWithReadTransaction(graphExistsQuery, map[string]interface{}{"graphName": "myGraph"})
-	if err != nil {
-		return false, err
-	}
-
-	switch t := records[0].Values[0].(type) {
-	case bool:
-		return t, err
-	default:
-		return false, fmt.Errorf("failed to convert %t to bool", t)
-	}
+func newGraph(name string, conn redis.Conn) *rg.Graph {
+	graph := rg.GraphNew(name, conn)
+	return &graph
 }
 
-func (rnc *RailNetworkClient) queryWithReadTransaction(query string, params map[string]interface{}) ([]*neo4j.Record, error) {
-	out, err := rnc.session.ReadTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
-		result, err := transaction.Run(query, params)
-
-		if err != nil {
-			return nil, err
-		}
-
-		var records []*neo4j.Record
-		for result.Next() {
-			records = append(records, result.Record())
-		}
-
-		return records, result.Err()
-	})
+func (rnc *RailNetworkClient) createGraph() error {
+	graphKey := fmt.Sprintf("%s-graph", rnc.graph.Id)
+	do, err := rnc.graph.Conn.Do("HGET", graphKey, "version")
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	switch t := out.(type) {
-	case []*neo4j.Record:
-		return t, nil
-	default:
-		return nil, nil
+	if do != nil {
+		res := string(do.([]uint8))
+
+		if res == graphVersion {
+			return nil
+		}
 	}
-}
 
-func (rnc *RailNetworkClient) queryWithWriteTransaction(query string, params map[string]interface{}) (*neo4j.Record, error) {
-	out, err := rnc.session.WriteTransaction(func(transaction neo4j.Transaction) (interface{}, error) {
-		result, err := transaction.Run(query, params)
+	// graph does not exist/wrong version, create
+	err = rnc.graph.Delete()
+	if err != nil && err.Error() != "ERR Invalid graph operation on empty key" {
+		return err
+	}
 
-		if err != nil {
-			return nil, err
+	stations := []string{"A1", "A2", "A3", "A4", "A5"}
+	var nodes []*rg.Node
+
+	for _, station := range stations {
+		node := &rg.Node{
+			Alias: station,
+			Label: labelStation,
+			Properties: map[string]interface{}{
+				propertyName: station,
+			},
+		}
+		rnc.graph.AddNode(node)
+		nodes = append(nodes, node)
+	}
+
+	for i := 0; i < len(nodes)-1; i++ {
+		// add bidirectional edges
+		edge := &rg.Edge{
+			Source:      nodes[i],
+			Relation:    relationConnection,
+			Destination: nodes[i+1],
+			Properties: map[string]interface{}{
+				propertyDistance: "1.0",
+			},
+		}
+		if e := rnc.graph.AddEdge(edge); e != nil {
+			return e
 		}
 
-		if result.Next() {
-			return result.Record(), nil
+		edge = &rg.Edge{
+			Source:      nodes[i+1],
+			Relation:    relationConnection,
+			Destination: nodes[i],
+			Properties: map[string]interface{}{
+				propertyDistance: "1.0",
+			},
 		}
+		if e := rnc.graph.AddEdge(edge); e != nil {
+			return e
+		}
+	}
 
-		return nil, result.Err()
-	})
+	_, err = rnc.graph.Commit()
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	switch t := out.(type) {
-	case *neo4j.Record:
-		return t, nil
-	default:
-		return nil, nil
-	}
-}
-
-func (rnc *RailNetworkClient) addNode(targetStationName, newStationName string, newStationLat, newStationLong, connectionDistance float32) (*neo4j.Record, error) {
-	out, err := rnc.session.WriteTransaction(func(tx neo4j.Transaction) (interface{}, error) {
-		result, err := tx.Run(addNodeQuery, map[string]interface{}{
-			"targetStationName":  targetStationName,
-			"newStationName":     newStationName,
-			"newStationLat":      newStationLat,
-			"newStationLong":     newStationLong,
-			"connectionDistance": connectionDistance,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		// after we add the node, we need to drop the gds graph and recreate it for astar queries
-		_, err = tx.Run(dropGraphQuery, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		_, err = tx.Run(createGraphQuery, nil)
-		if err != nil {
-			return nil, err
-		}
-
-		if result.Next() {
-			return result.Record(), nil
-		}
-
-		return nil, result.Err()
-	})
+	_, err = rnc.graph.Conn.Do("HSET", graphKey, "version", graphVersion)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	switch t := out.(type) {
-	case *neo4j.Record:
-		return t, nil
-	default:
-		return nil, nil
-	}
+	return err
 }

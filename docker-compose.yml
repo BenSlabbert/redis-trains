@@ -6,14 +6,10 @@ services:
     ports:
       - "6379:6379"
 
-  neo4j:
-    image: neo4j:4.3-community
-    environment:
-      NEO4J_AUTH: none
-      NEO4JLABS_PLUGINS: '["graph-data-science"]'
+  redis-graph:
+    image: redislabs/redisgraph:2.8
     ports:
-      - "7474:7474"
-      - "7687:7687"
+      - "6380:6379"
 
   psql:
     image: postgres:14-alpine

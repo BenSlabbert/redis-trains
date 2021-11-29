@@ -94,8 +94,8 @@ func (kvs *KVStore) GetTrainRoute(train string) (*TrainRoute, error) {
 
 	if !exists {
 		tr := &TrainRoute{
-			Origin:      "Kings Cross",
-			Destination: "Kentish Town",
+			Origin:      "A1",
+			Destination: "A5",
 		}
 
 		marshal, err := json.Marshal(tr)

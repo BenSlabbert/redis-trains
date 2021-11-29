@@ -5,7 +5,6 @@ import (
 	"errors"
 	"google.golang.org/protobuf/types/known/structpb"
 	"log"
-	"redis-trains/pkg/graph"
 	"redis-trains/pkg/redisstorage"
 	"redis-trains/pkg/stream"
 	"time"
@@ -29,14 +28,18 @@ type Simple struct {
 	Name    string
 	Exiting chan error
 
-	rnc      *graph.RailNetworkClient
+	rnc      RailNetworkClient
 	kvStore  *redisstorage.KVStore
 	producer *stream.Producer
 	state    State
 	stop     bool
 }
 
-func NewSimple(name string, rnc *graph.RailNetworkClient, kvStore *redisstorage.KVStore, producer *stream.Producer) *Simple {
+type RailNetworkClient interface {
+	FindPath(origin, destination string) ([]string, error)
+}
+
+func NewSimple(name string, rnc RailNetworkClient, kvStore *redisstorage.KVStore, producer *stream.Producer) *Simple {
 	return &Simple{Name: name, Exiting: make(chan error), rnc: rnc, kvStore: kvStore, producer: producer, state: Stopped}
 }
 
@@ -75,13 +78,13 @@ func (s *Simple) Run() {
 }
 
 func (s *Simple) runRoute(route *redisstorage.TrainRoute) error {
-	aStar, err := s.rnc.AStar(route.Origin, route.Destination)
+	aStar, err := s.rnc.FindPath(route.Origin, route.Destination)
 	if err != nil {
 		return err
 	}
 
-	for idx, station := range aStar.Path {
-		if idx == len(aStar.Path)-1 {
+	for idx, station := range aStar {
+		if idx == len(aStar)-1 {
 			// we are at the end of the line
 			err = s.moveTo(ArrivingAtStation)
 			if err != nil {
@@ -107,7 +110,7 @@ func (s *Simple) runRoute(route *redisstorage.TrainRoute) error {
 		if err != nil {
 			return err
 		}
-		nextStation := aStar.Path[idx+1]
+		nextStation := aStar[idx+1]
 		log.Printf("travelling to station %s", nextStation)
 	}
 
