@@ -78,13 +78,13 @@ func (s *Simple) Run() {
 }
 
 func (s *Simple) runRoute(route *redisstorage.TrainRoute) error {
-	aStar, err := s.rnc.FindPath(route.Origin, route.Destination)
+	path, err := s.rnc.FindPath(route.Origin, route.Destination)
 	if err != nil {
 		return err
 	}
 
-	for idx, station := range aStar {
-		if idx == len(aStar)-1 {
+	for idx, station := range path {
+		if idx == len(path)-1 {
 			// we are at the end of the line
 			err = s.moveTo(ArrivingAtStation)
 			if err != nil {
@@ -110,7 +110,7 @@ func (s *Simple) runRoute(route *redisstorage.TrainRoute) error {
 		if err != nil {
 			return err
 		}
-		nextStation := aStar[idx+1]
+		nextStation := path[idx+1]
 		log.Printf("travelling to station %s", nextStation)
 	}
 

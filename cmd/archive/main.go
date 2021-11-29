@@ -52,7 +52,8 @@ func main() {
 	for {
 		select {
 		case <-sigs:
-			os.Exit(0)
+			// os.Exit does not run defer funcs
+			return
 		default:
 			// continue below
 		}
