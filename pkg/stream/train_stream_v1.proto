@@ -1,0 +1,36 @@
+syntax = "proto3";
+package train_stream_pb;
+option go_package = "./;train_stream_pb";
+
+import "google/protobuf/timestamp.proto";
+
+message event {
+  google.protobuf.Timestamp timestamp = 1;
+
+  oneof payload {
+    ErrorMessage error = 2;
+    StartingMessage starting = 3;
+    ArrivingAtStationMessage arriving_at_station = 4;
+    LeavingStationMessage leaving_station = 5;
+    TravelingToNextStationMessage traveling_to_next_station = 6;
+    StoppingMessage stopping = 7;
+    TurningAroundMessage turning_around = 8;
+    StoppedMessage stopped = 9;
+  }
+}
+
+message ErrorMessage {}
+
+message StartingMessage {}
+
+message ArrivingAtStationMessage {}
+
+message LeavingStationMessage {}
+
+message TravelingToNextStationMessage {}
+
+message StoppingMessage {}
+
+message TurningAroundMessage {}
+
+message StoppedMessage {}
