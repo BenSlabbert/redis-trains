@@ -2,9 +2,9 @@ package psqlstorage
 
 import (
 	"context"
+	"encoding/hex"
 	"github.com/go-redis/redis/v8"
 	"github.com/jackc/pgx/v4"
-	"google.golang.org/protobuf/types/known/structpb"
 	"log"
 	"strings"
 )
@@ -40,15 +40,7 @@ func (a *Archiver) SaveBatch(messages []redis.XMessage) (err error) {
 	batch := &pgx.Batch{}
 
 	for _, msg := range messages {
-		var newStruct *structpb.Struct
-		newStruct, err = structpb.NewStruct(msg.Values)
-		if err != nil {
-			// release the tx
-			return err
-		}
-
-		var json []byte
-		json, err = newStruct.MarshalJSON()
+		decodedBytes, err := hex.DecodeString(msg.Values["data"].(string))
 		if err != nil {
 			// release the tx
 			return err
@@ -56,7 +48,7 @@ func (a *Archiver) SaveBatch(messages []redis.XMessage) (err error) {
 
 		split := strings.Split(msg.ID, "-")
 
-		batch.Queue("insert into train_archive(sequence_timestamp, sequence_increment, data) values($1, $2, $3)", split[0], split[1], json)
+		batch.Queue("insert into train_archive(sequence_timestamp, sequence_increment, data) values($1, $2, $3)", split[0], split[1], decodedBytes)
 	}
 
 	br := tx.SendBatch(context.Background(), batch)

@@ -2,10 +2,12 @@ package stream
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"github.com/go-redis/redis/v8"
-	"google.golang.org/protobuf/types/known/structpb"
+	"github.com/golang/protobuf/proto"
 	"log"
+	"redis-trains/gen/pb/train_stream_pb"
 	"time"
 )
 
@@ -77,12 +79,19 @@ func (p *Producer) heartBeat() {
 	}
 }
 
-func (p *Producer) Produce(ctx context.Context, values *structpb.Struct) (string, error) {
+func (p *Producer) Produce(ctx context.Context, event *train_stream_pb.Event) (string, error) {
+	bytes, err := proto.Marshal(event)
+	if err != nil {
+		return "", err
+	}
+
+	encoded := hex.EncodeToString(bytes)
+
 	return p.redis.XAdd(ctx, &redis.XAddArgs{
 		Stream: p.stream,
 		MaxLen: p.maxLen,
 		Approx: p.approx,
-		Values: values.AsMap(),
+		Values: map[string]interface{}{"data": encoded},
 	}).Result()
 }
 

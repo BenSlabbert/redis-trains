@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"google.golang.org/protobuf/types/known/structpb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
+	"redis-trains/gen/pb/train_stream_pb"
 	"redis-trains/pkg/redisstorage"
 	"redis-trains/pkg/stream"
 	"time"
@@ -136,7 +138,15 @@ func (s *Simple) moveTo(state State) error {
 	}
 	sMap.Fields["time"] = structpb.NewStringValue(time.Now().String())
 	sMap.Fields["state"] = structpb.NewStringValue(string(state))
-	nextId, err := s.producer.Produce(context.Background(), sMap)
+
+	e := &train_stream_pb.Event{
+		Timestamp: timestamppb.Now(),
+		Payload: &train_stream_pb.Event_Error{
+			Error: &train_stream_pb.ErrorMessage{},
+		},
+	}
+
+	nextId, err := s.producer.Produce(context.Background(), e)
 	if err != nil {
 		return err
 	}
