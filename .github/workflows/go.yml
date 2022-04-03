@@ -1,0 +1,49 @@
+name: Go
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+
+    - name: Set up Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17
+
+    - name: Install deps
+      run: >
+        sudo apt-get update &&
+        sudo apt-get install -y build-essential git tar curl
+
+    - name: Setup .env
+      run: >
+        echo "no env to configure"
+
+    - name: Install upx
+      run: make ci_install_upx
+
+    - name: Build
+      run: make build upx
+
+    - name: Generate bin hashes
+      run: >
+        sha256sum ./bin/cmd/archive > ./bin/cmd/archive.sha256sum &&
+        sha256sum ./bin/cmd/notification > ./bin/cmd/notification.sha256sum &&
+        sha256sum ./bin/cmd/sse > ./bin/cmd/sse.sha256sum &&
+        sha256sum ./bin/cmd/train > ./bin/cmd/train.sha256sum &&
+        sha256sum ./bin/cmd/archive.upx > ./bin/cmd/archive.upx.sha256sum &&
+        sha256sum ./bin/cmd/notification.upx > ./bin/cmd/notification.upx.sha256sum &&
+        sha256sum ./bin/cmd/sse.upx > ./bin/cmd/sse.upx.sha256sum &&
+        sha256sum ./bin/cmd/train.upx > ./bin/cmd/train.upx.sha256sum
+
+    - uses: actions/upload-artifact@v2
+      with:
+        name: artifacts
+        path: ./bin/

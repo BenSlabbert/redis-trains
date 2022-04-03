@@ -12,7 +12,7 @@ $(info BIN output dir: ${BIN})
 $(info GIT_COMMIT_ID: ${GIT_COMMIT_ID})
 $(info GIT_BRANCH_NAME: ${GIT_BRANCH_NAME})
 
-.PHONY: all clean install_deps mod vet fmt proto-gen test build buildFast upx install_upx
+.PHONY: all clean install_deps mod vet fmt proto-gen test build buildFast upx ci_install_upx
 
 default: all
 
@@ -60,16 +60,15 @@ proto-gen:
 clean:
 	rm -rf $(BIN)
 
-install_deps: install_upx
+install_deps:
 	go get -v ./...
 	go install honnef.co/go/tools/cmd/staticcheck@latest
 	go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.26
 	go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.1
 
-install_upx:
-	rm -rf /tmp/upx
+ci_install_upx:
 	curl -L https://github.com/upx/upx/releases/download/v3.96/upx-3.96-amd64_linux.tar.xz -o /tmp/upx.tar.xz
 	mkdir /tmp/upx
 	tar xvf /tmp/upx.tar.xz -C /tmp/upx
-	sudo mv /tmp/upx/upx-3.96-amd64_linux/upx /usr/local/bin/upx
+	mv /tmp/upx/upx-3.96-amd64_linux/upx /usr/local/bin/upx
 	upx --version
