@@ -24,7 +24,8 @@ jobs:
 
     - name: Setup .env
       run: >
-        echo "no env to configure"
+        echo "no env to configure" &&
+        echo "" >> .env
 
     - name: Install upx
       run: make ci_install_upx
