@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"github.com/go-redis/redis/v8"
 	"log"
 	"os"
@@ -11,14 +12,21 @@ import (
 	"syscall"
 )
 
-const Start = "0-0"
-const Stream = "train-events"
-const Group = "archiver"
-const Consumer = "archiver-1"
-const LastConsumed = ">"
-const BatchSize = 100
+const (
+	Start        = "0-0"
+	Stream       = "train-events"
+	Group        = "archiver"
+	Consumer     = "archiver-1"
+	LastConsumed = ">"
+	BatchSize    = 100
+)
+
+// GitCommit is set during compilation
+var GitCommit string
 
 func main() {
+	fmt.Printf("GitCommit: %s", GitCommit)
+
 	archiver, err := psqlstorage.NewArchiver()
 	if err != nil {
 		log.Fatalln(err)
@@ -68,7 +76,7 @@ func main() {
 			continue
 		}
 
-		msgIds := make([]string, len(messages), len(messages))
+		msgIds := make([]string, len(messages))
 		for i := range msgIds {
 			msgIds[i] = messages[i].ID
 		}

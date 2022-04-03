@@ -55,7 +55,7 @@ func (rnc *RailNetworkClient) FindPath(origin, destination string) ([]string, er
 	values := record.Values()
 	path := values[0].(rg.Path)
 
-	stations := make([]string, len(path.Nodes), len(path.Nodes))
+	stations := make([]string, len(path.Nodes))
 	for i := 0; i < len(stations); i++ {
 		stations[i] = path.Nodes[i].Properties[propertyName].(string)
 	}

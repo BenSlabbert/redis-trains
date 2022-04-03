@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -13,7 +14,12 @@ import (
 
 const Stream = "train-events"
 
+// GitCommit is set during compilation
+var GitCommit string
+
 func main() {
+	fmt.Printf("GitCommit: %s", GitCommit)
+
 	kvStore, err := redisstorage.NewKVStore("localhost", "", 6379, 0)
 	if err != nil {
 		log.Fatalln(err)
