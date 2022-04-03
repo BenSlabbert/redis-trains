@@ -2,6 +2,8 @@
 
 Using redis streams and the graph module to track trains in a simulation.
 
+See: https://www.youtube.com/watch?v=odhL_bP9XTQ as the inspiration of this project.
+
 ## Hooks
 
 The [hooks](./hooks) dir contains git hook scripts.
