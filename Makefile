@@ -8,7 +8,6 @@ build: clean mod fmt vet proto-gen
 
 fmt:
 	go fmt ./...
-	./fmt_sql.sh
 
 vet:
 	go vet ./...
