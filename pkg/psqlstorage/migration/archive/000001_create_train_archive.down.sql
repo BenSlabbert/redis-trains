@@ -1,1 +1,2 @@
-drop table train_archive;
+DROP TABLE train_archive;
+

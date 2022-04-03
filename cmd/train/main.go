@@ -19,8 +19,8 @@ func main() {
 		log.Fatalln(err)
 	}
 	defer func() {
-		if err := kvStore.Close(); err != nil {
-			log.Println(err)
+		if e := kvStore.Close(); e != nil {
+			log.Println(e)
 		}
 	}()
 

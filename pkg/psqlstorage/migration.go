@@ -18,6 +18,8 @@ func init() {
 	if err != nil {
 		log.Fatalln(err)
 	}
+
+	// todo embed these files
 	m, err := migrate.NewWithDatabaseInstance(
 		"file:///home/ben/Goland/redis-trains/pkg/psqlstorage/migration/archive",
 		"postgres", driver)

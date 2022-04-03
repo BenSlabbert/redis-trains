@@ -101,7 +101,11 @@ func (broker *Broker) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
 
 		// Write to the ResponseWriter
 		// Server Sent Events compatible
-		fmt.Fprintf(rw, "data: %s\n\n", <-messageChan)
+		_, err := fmt.Fprintf(rw, "data: %s\n\n", <-messageChan)
+		if err != nil {
+			log.Println(err)
+			return
+		}
 
 		// Flush the data immediatly instead of buffering it for later.
 		flusher.Flush()

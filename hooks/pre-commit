@@ -1,0 +1,12 @@
+#!/bin/bash
+
+# be sure to have https://github.com/darold/pgFormatter on the PATH
+which pg_format
+
+FILES=$(git diff --cached --name-only | grep -E ".*.up.sql|.*.down.sql")
+
+for sqlFile in $FILES; do
+  echo "formatting: $sqlFile"
+  pg_format -c .pg_format "$sqlFile" >out.sql
+  mv out.sql "$sqlFile"
+done
